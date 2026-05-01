@@ -1,0 +1,257 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: smoke (${{ matrix.os }} / py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-22.04, macos-latest, windows-latest]
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Show toolchain versions
+        shell: bash
+        run: |
+          python --version
+          echo "OS: ${{ matrix.os }}"
+
+      - name: Run smoke tests (POSIX)
+        if: runner.os != 'Windows'
+        run: bash tests/smoke.sh
+
+      - name: Run smoke tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tests/smoke.ps1
+
+  integration:
+    name: integration (${{ matrix.os }}) - real ast-grep binary
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install ast-grep via npm
+        shell: bash
+        run: npm install -g @ast-grep/cli
+
+      - name: Verify install
+        shell: bash
+        run: |
+          ast-grep --version || sg --version
+          python scripts/ast_grep_helper.py doctor
+
+      - name: Search a known pattern
+        shell: bash
+        run: |
+          mkdir -p /tmp/ag-int
+          cat > /tmp/ag-int/sample.ts <<'TS'
+          console.log("hi");
+          console.log("there");
+          logger.info("ok");
+          TS
+          OUT=$(python scripts/ast_grep_helper.py search 'console.log($MSG)' --lang ts /tmp/ag-int/)
+          echo "$OUT"
+          echo "$OUT" | grep -q 'sample.ts' || { echo "FAIL: search missed sample.ts"; exit 1; }
+          # Two console.log matches expected
+          COUNT=$(echo "$OUT" | grep -c 'console.log' || true)
+          [ "$COUNT" -ge 2 ] || { echo "FAIL: expected >=2 matches, got $COUNT"; exit 1; }
+
+      - name: Replace dry-run does NOT mutate
+        shell: bash
+        run: |
+          cat > /tmp/ag-int/dryrun.ts <<'TS'
+          console.log("hi");
+          TS
+          python scripts/ast_grep_helper.py replace 'console.log($MSG)' 'logger.info($MSG)' --lang ts /tmp/ag-int/dryrun.ts >/dev/null
+          grep -q 'console.log' /tmp/ag-int/dryrun.ts || { echo "FAIL: dry-run mutated the file!"; exit 1; }
+
+      - name: Replace --apply mutates files (two-pass write)
+        shell: bash
+        run: |
+          cat > /tmp/ag-int/apply.ts <<'TS'
+          console.log("hi");
+          TS
+          python scripts/ast_grep_helper.py replace 'console.log($MSG)' 'logger.info($MSG)' --lang ts /tmp/ag-int/apply.ts --apply
+          grep -q 'logger.info' /tmp/ag-int/apply.ts || { echo "FAIL: --apply did not rewrite!"; cat /tmp/ag-int/apply.ts; exit 1; }
+          grep -q 'console.log' /tmp/ag-int/apply.ts && { echo "FAIL: console.log still present after --apply!"; cat /tmp/ag-int/apply.ts; exit 1; } || true
+
+  syntax-check-old-python:
+    name: syntax check (Python ${{ matrix.floor }} floor)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    strategy:
+      matrix:
+        floor: ['3.9', '3.10']
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Python ${{ matrix.floor }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.floor }}
+      - name: Compile-check the helper targets ${{ matrix.floor }}
+        run: |
+          python -c "
+          import ast
+          src = open('scripts/ast_grep_helper.py').read()
+          ast.parse(src, feature_version=tuple(map(int, '${{ matrix.floor }}'.split('.'))))
+          print('parses on ${{ matrix.floor }}: OK')
+          "
+          python -m py_compile scripts/ast_grep_helper.py
+          echo 'py_compile passed on ${{ matrix.floor }}'
+
+  install-script:
+    name: install.sh - ${{ matrix.os }} - method=${{ matrix.method }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        method: [npm, github]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run install.sh --method=${{ matrix.method }}
+        run: bash install.sh --method=${{ matrix.method }}
+      - name: Verify ast-grep available after install
+        run: |
+          export PATH="$PWD/bin:$PATH"
+          ast-grep --version || sg --version
+
+  install-script-windows:
+    name: install.ps1 - windows - method=${{ matrix.method }}
+    runs-on: windows-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        method: [npm, github]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run install.ps1 -Method ${{ matrix.method }}
+        shell: pwsh
+        run: ./install.ps1 -Method ${{ matrix.method }}
+      - name: Verify ast-grep available after install
+        shell: pwsh
+        run: |
+          $env:Path = "$PWD/bin;" + $env:Path
+          $cmd = Get-Command ast-grep -ErrorAction SilentlyContinue
+          if (-not $cmd) { $cmd = Get-Command sg -ErrorAction SilentlyContinue }
+          if (-not $cmd) {
+            $cmd = Get-Command "$PWD/bin/sg.exe" -ErrorAction SilentlyContinue
+          }
+          if (-not $cmd) { throw "ast-grep / sg not on PATH after install" }
+          & $cmd.Source --version
+
+  lint:
+    name: lint and structure
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Verify SKILL.md frontmatter shape
+        run: |
+          python - <<'PY'
+          import re
+          src = open('SKILL.md').read()
+          assert src.startswith('---\n'), 'SKILL.md must start with YAML frontmatter'
+          end = src.find('\n---\n', 4)
+          assert end > 0, 'SKILL.md missing closing ---'
+          fm = src[4:end]
+          assert re.search(r'^name:\s*ast-grep\s*$', fm, re.M), 'frontmatter missing name: ast-grep'
+          assert re.search(r'^description:', fm, re.M), 'frontmatter missing description'
+          print('frontmatter OK')
+          PY
+      - name: Verify required files exist
+        run: |
+          for f in SKILL.md README.md LICENSE \
+                   scripts/ast_grep_helper.py \
+                   install.sh install.ps1 \
+                   tests/smoke.sh tests/smoke.ps1 \
+                   references/install.md references/patterns.md \
+                   references/pitfalls.md references/recipes.md \
+                   references/cli.md references/yaml-rules.md \
+                   references/sgconfig.md; do
+            test -f "$f" || { echo "FAIL: missing $f"; exit 1; }
+          done
+          echo 'all required files present'
+      - name: Verify no Korean in skill content
+        run: |
+          python - <<'PY'
+          import pathlib, re, sys
+          hangul = re.compile(r"[\uac00-\ud7a3]")
+          targets = [pathlib.Path("SKILL.md"), pathlib.Path("README.md"),
+                     pathlib.Path("install.sh"), pathlib.Path("install.ps1")]
+          for d in ("references", "scripts", "tests", ".github"):
+              targets.extend(pathlib.Path(d).rglob("*"))
+          hits = 0
+          for p in targets:
+              if not p.is_file():
+                  continue
+              try:
+                  text = p.read_text(encoding="utf-8")
+              except (UnicodeDecodeError, OSError):
+                  continue
+              for n, line in enumerate(text.splitlines(), 1):
+                  if hangul.search(line):
+                      print(f"{p}:{n}: {line.rstrip()}")
+                      hits += 1
+          if hits:
+              print(f"FAIL: {hits} Korean line(s) found", file=sys.stderr)
+              sys.exit(1)
+          print("no Korean")
+          PY
+      - name: Bash syntax check (install.sh, smoke.sh)
+        run: |
+          bash -n install.sh
+          bash -n tests/smoke.sh
+          echo 'bash scripts: syntax OK'
+      - name: PowerShell parse check (install.ps1, smoke.ps1)
+        shell: pwsh
+        run: |
+          $tokens = $null; $errors = $null
+          foreach ($f in 'install.ps1','tests/smoke.ps1') {
+            [System.Management.Automation.Language.Parser]::ParseFile($f, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors -and $errors.Count -gt 0) {
+              Write-Host "FAIL: $f has parse errors:"
+              $errors | ForEach-Object { Write-Host "  $_" }
+              exit 1
+            }
+          }
+          Write-Host 'powershell scripts: parse OK'
