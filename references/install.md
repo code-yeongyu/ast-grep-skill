@@ -86,18 +86,17 @@ If every package manager fails:
 #    https://github.com/ast-grep/ast-grep/releases/latest
 #
 #    Naming pattern:
-#      ast-grep-aarch64-apple-darwin.zip          macOS Apple Silicon
-#      ast-grep-x86_64-apple-darwin.zip           macOS Intel
-#      ast-grep-aarch64-unknown-linux-gnu.zip     Linux ARM64 (glibc)
-#      ast-grep-x86_64-unknown-linux-gnu.zip      Linux x86_64 (glibc)
-#      ast-grep-x86_64-unknown-linux-musl.zip     Linux x86_64 (musl, e.g. Alpine)
-#      ast-grep-x86_64-pc-windows-msvc.zip        Windows x86_64
-#      ast-grep-aarch64-pc-windows-msvc.zip       Windows ARM64
+#      app-aarch64-apple-darwin.zip          macOS Apple Silicon
+#      app-x86_64-apple-darwin.zip           macOS Intel
+#      app-aarch64-unknown-linux-gnu.zip     Linux ARM64 (glibc)
+#      app-x86_64-unknown-linux-gnu.zip      Linux x86_64 (glibc)
+#      app-x86_64-pc-windows-msvc.zip        Windows x86_64
+#      app-aarch64-pc-windows-msvc.zip       Windows ARM64
 
 # 2. Download and extract:
-VERSION=0.42.1
+VERSION=0.43.0
 TRIPLE=aarch64-apple-darwin
-curl -fsSL "https://github.com/ast-grep/ast-grep/releases/download/${VERSION}/ast-grep-${TRIPLE}.zip" -o /tmp/ast-grep.zip
+curl -fsSL "https://github.com/ast-grep/ast-grep/releases/download/${VERSION}/app-${TRIPLE}.zip" -o /tmp/ast-grep.zip
 unzip /tmp/ast-grep.zip -d /tmp/ast-grep
 sudo mv /tmp/ast-grep/ast-grep /usr/local/bin/sg
 sudo chmod +x /usr/local/bin/sg
@@ -126,7 +125,7 @@ Requires Rust 1.74+. Slowest path; only useful when you need a specific commit o
 
 ```bash
 ast-grep --version            # or `sg --version`
-# ast-grep 0.42.1
+# ast-grep 0.43.0
 ```
 
 Then sanity-check a real query:

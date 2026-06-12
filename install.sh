@@ -33,7 +33,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_ROOT="$SCRIPT_DIR"
 CACHE_BIN_DIR="$SKILL_ROOT/bin"
 
-PINNED_VERSION="0.42.1"
+PINNED_VERSION="0.43.0"
 FORCED_METHOD=""
 USE_FALLBACK=1
 QUIET=0
@@ -163,12 +163,11 @@ try_mise() {
 }
 
 # Tarball assets are named like:
-#   ast-grep-aarch64-apple-darwin.zip
-#   ast-grep-x86_64-apple-darwin.zip
-#   ast-grep-aarch64-unknown-linux-gnu.zip
-#   ast-grep-x86_64-unknown-linux-gnu.zip
-#   ast-grep-x86_64-unknown-linux-musl.zip
-#   ast-grep-x86_64-pc-windows-msvc.zip   (.zip only on windows)
+#   app-aarch64-apple-darwin.zip
+#   app-x86_64-apple-darwin.zip
+#   app-aarch64-unknown-linux-gnu.zip
+#   app-x86_64-unknown-linux-gnu.zip
+#   app-x86_64-pc-windows-msvc.zip   (.zip only on windows)
 
 triple_for() {
   case "$OS-$ARCH" in
@@ -192,7 +191,7 @@ try_github() {
     return 1
   }
 
-  ASSET="ast-grep-${TRIPLE}.zip"
+  ASSET="app-${TRIPLE}.zip"
   URL="https://github.com/ast-grep/ast-grep/releases/download/${PINNED_VERSION}/${ASSET}"
   TMP="$(mktemp -d -t ast-grep-install-XXXXXX)"
   trap 'rm -rf "$TMP"' RETURN

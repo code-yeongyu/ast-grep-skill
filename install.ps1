@@ -21,7 +21,7 @@
   Force one method: scoop | winget | choco | npm | cargo | pip | github
 
 .PARAMETER Version
-  Pin a specific version when downloading from GitHub. Default: 0.42.1
+  Pin a specific version when downloading from GitHub. Default: 0.43.0
 
 .PARAMETER NoFallback
   Don't fall back to GitHub zip; fail if all package managers miss
@@ -37,7 +37,7 @@
 
 param(
     [string]$Method = "",
-    [string]$Version = "0.42.1",
+    [string]$Version = "0.43.0",
     [switch]$NoFallback,
     [switch]$Quiet
 )
@@ -152,7 +152,7 @@ function Try-Github {
         return $false
     }
 
-    $asset = "ast-grep-$triple.zip"
+    $asset = "app-$triple.zip"
     $url = "https://github.com/ast-grep/ast-grep/releases/download/$Version/$asset"
     $tmp = Join-Path $env:TEMP ("ast-grep-install-" + [guid]::NewGuid().ToString('N').Substring(0,8))
     New-Item -ItemType Directory -Path $tmp -Force | Out-Null
